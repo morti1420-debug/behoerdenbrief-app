@@ -501,10 +501,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 })();
 </script>
 
-<script>
-/* ===== OPENAI REAL ANALYSIS v4 ===== */
+<script>/* ===== OPENAI REAL ANALYSIS v5 ===== */
 (function () {
-  var STORAGE_KEY = '__behoerde_openai_key__';
+  var KEY = '__behoerde_openai_key__';
   var uploadedFile = null;
   var isAnalyzing = false;
   var ttsActive = false;
@@ -515,24 +514,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     var b = document.createElement('button');
     b.id = '__api_btn__';
     b.style.cssText = 'position:fixed;bottom:72px;right:12px;z-index:10000;border:none;border-radius:24px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.3)';
-    b.onclick = enterKey;
-    document.body.appendChild(b);
-    syncBtn();
+    b.onclick = enterKey; document.body.appendChild(b); syncBtn();
   }
   function syncBtn() {
-    var b = document.getElementById('__api_btn__');
-    if (!b) return;
-    var k = localStorage.getItem(STORAGE_KEY);
+    var b = document.getElementById('__api_btn__'); if (!b) return;
+    var k = localStorage.getItem(KEY);
     b.textContent = k ? '✓ KI aktiv' : '🔑 API-Key eingeben';
-    b.style.background = k ? '#1a5c38' : '#c0392b';
-    b.style.color = '#fff';
+    b.style.background = k ? '#1a5c38' : '#c0392b'; b.style.color = '#fff';
   }
   function enterKey() {
-    var v = prompt('OpenAI API-Key (sk-...):', localStorage.getItem(STORAGE_KEY) || '');
-    if (v === null) return;
-    v = v.trim();
-    if (!v) { localStorage.removeItem(STORAGE_KEY); alert('Entfernt.'); }
-    else if (v.startsWith('sk-')) { localStorage.setItem(STORAGE_KEY, v); alert('Gespeichert! Jetzt Brief hochladen und prüfen.'); }
+    var v = prompt('OpenAI API-Key (sk-...):', localStorage.getItem(KEY) || '');
+    if (v === null) return; v = v.trim();
+    if (!v) { localStorage.removeItem(KEY); alert('Entfernt.'); }
+    else if (v.startsWith('sk-')) { localStorage.setItem(KEY, v); alert('Gespeichert!'); }
     else { alert('Ungültig – muss mit sk- beginnen.'); return; }
     syncBtn();
   }
@@ -557,14 +551,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     var f = e.dataTransfer && e.dataTransfer.files; if (f && f[0]) uploadedFile = f[0];
   }, true);
 
-  /* ── Click intercept ── */
+  /* ── Intercept Brief prüfen ── */
   document.addEventListener('click', function (e) {
     var el = e.target;
     for (var i = 0; i < 6; i++) {
       if (!el) break;
       if (el.tagName === 'BUTTON' && (el.textContent || '').indexOf('Brief pr') !== -1) {
-        var key = localStorage.getItem(STORAGE_KEY);
-        var file = findFile();
+        var key = localStorage.getItem(KEY); var file = findFile();
         if (key && file && !isAnalyzing) { isAnalyzing = true; setTimeout(function () { analyze(file, key); }, 700); }
         else if (!key) setTimeout(function () { showErr('Bitte zuerst API-Key eingeben.\n(Roter Button unten rechts)'); }, 400);
         break;
@@ -582,18 +575,16 @@ document.addEventListener('DOMContentLoaded', async function() {
   function getLang() {
     var map = { 'Türkçe':'Türkisch','العربية':'Arabisch','English':'Englisch','Русский':'Russisch',
       'فارسی':'Persisch','中文':'Chinesisch','Українська':'Ukrainisch','Polski':'Polnisch',
-      'Română':'Rumänisch','Español':'Spanisch','Français':'Französisch','Italiano':'Italienisch',
-      'Shqip':'Albanisch','Ελληνικά':'Griechisch' };
+      'Română':'Rumänisch','Español':'Spanisch','Français':'Französisch','Italiano':'Italienisch' };
     var t = document.body.innerText || '';
     for (var k in map) if (t.indexOf(k) !== -1) return map[k];
     return 'Deutsch';
   }
-  function getLangCode(name) {
+  function getLangCode(n) {
     var m = { 'Deutsch':'de-DE','Türkisch':'tr-TR','Arabisch':'ar-SA','Englisch':'en-US',
       'Russisch':'ru-RU','Persisch':'fa-IR','Chinesisch':'zh-CN','Ukrainisch':'uk-UA',
-      'Polnisch':'pl-PL','Rumänisch':'ro-RO','Spanisch':'es-ES','Französisch':'fr-FR',
-      'Italienisch':'it-IT','Albanisch':'sq-AL','Griechisch':'el-GR' };
-    return m[name] || 'de-DE';
+      'Polnisch':'pl-PL','Rumänisch':'ro-RO','Spanisch':'es-ES','Französisch':'fr-FR','Italienisch':'it-IT' };
+    return m[n] || 'de-DE';
   }
 
   /* ── OpenAI ── */
@@ -603,7 +594,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       var b64 = await toB64(file);
       var mime = file.type || 'image/jpeg';
       var lang = getLang();
-      var prompt = 'Du bist Experte für deutsche Behörden- und Inkassobriefe.\nAnalysiere diesen Brief und antworte auf ' + lang + '.\nGib NUR gültiges JSON zurück:\n{\n  "worum": "1 Satz was der Brief will",\n  "absender": "Firmen- oder Behördenname",\n  "frist": "Datum als Text oder null",\n  "betrag": "z.B. 71,16 € oder null",\n  "risiko": "Hoch oder Mittel oder Niedrig",\n  "risiko_grund": "Warum dieses Risiko",\n  "unterlagen": ["Konkrete Aktion 1","Konkrete Aktion 2"],\n  "original_text": "Vollständiger Brieftext auf Deutsch, Wort für Wort",\n  "erklarung": "4-5 einfache Sätze auf ' + lang + ', verständlich für Laien",\n  "empfehlung": "Was genau tun, auf ' + lang + '",\n  "naechste_schritte": ["Schritt 1","Schritt 2","Schritt 3"]\n}';
+      var prompt = 'Du bist Experte für deutsche Behörden- und Inkassobriefe.\nAnalysiere diesen Brief und antworte auf ' + lang + '.\nGib NUR gültiges JSON zurück:\n{\n  "worum": "1 Satz was der Brief will",\n  "absender": "Firmen- oder Behördenname",\n  "frist": "Datum als Text oder null",\n  "betrag": "z.B. 71,16 € oder null",\n  "risiko": "Hoch oder Mittel oder Niedrig",\n  "risiko_grund": "Warum dieses Risiko",\n  "unterlagen": ["Konkrete Aktion 1","Konkrete Aktion 2"],\n  "original_text": "Vollständiger Brieftext auf Deutsch",\n  "erklarung": "4-5 einfache Sätze auf ' + lang + '",\n  "empfehlung": "Was genau tun auf ' + lang + '",\n  "naechste_schritte": ["Schritt 1","Schritt 2","Schritt 3"],\n  "antwort_typen": ["widerspruch" oder "ratenzahlung" oder "zahlung_zusagen" oder "bestaetigung" oder "nachfrage" oder "unterlagen_einreichen" — nur die die passen],\n  "brief_typ": "inkasso oder behoerde oder mahnung oder information oder sonstiges"\n}';
 
       var r = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -616,129 +607,152 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!r.ok) { var e = await r.json(); throw new Error((e.error && e.error.message) || 'HTTP ' + r.status); }
       var data = await r.json();
       var txt = data.choices[0].message.content;
-      var m = txt.match(/\{[\s\S]*\}/);
-      if (!m) throw new Error('Ungültige API-Antwort');
+      var m = txt.match(/\{[\s\S]*\}/); if (!m) throw new Error('Ungültige API-Antwort');
       var d = JSON.parse(m[0]);
-      window.__aid__ = d;
-      isAnalyzing = false;
-      showResult(d);
+      window.__aid__ = d; isAnalyzing = false; showResult(d);
     } catch (ex) { isAnalyzing = false; showErr(ex.message || 'Fehler'); }
   }
 
   /* ── TTS ── */
   function speak(text, code) {
-    if (ttsActive) { window.speechSynthesis.cancel(); ttsActive = false; syncPlayBtns(); return; }
+    if (ttsActive) { window.speechSynthesis.cancel(); ttsActive = false; syncTts(); return; }
     var u = new SpeechSynthesisUtterance(text);
     u.lang = code || 'de-DE'; u.rate = 0.91; u.pitch = 1.02;
-    u.onend = u.onerror = function () { ttsActive = false; syncPlayBtns(); };
-    window.speechSynthesis.speak(u);
-    ttsActive = true; syncPlayBtns();
+    u.onend = u.onerror = function () { ttsActive = false; syncTts(); };
+    window.speechSynthesis.speak(u); ttsActive = true; syncTts();
   }
-  function syncPlayBtns() {
+  function syncTts() {
     ['__pb1__','__pb2__'].forEach(function (id) {
       var b = document.getElementById(id);
-      if (b) b.querySelector('span') && (b.querySelector('span').textContent = ttsActive ? '⏸' : '▶');
+      if (b) b.textContent = ttsActive ? '⏸ Pause' : (id==='__pb1__' ? '▶ Brief vorlesen' : '▶ Erklärung anhören');
     });
   }
   window.__speak__ = speak;
 
-  /* ── Panel helpers ── */
-  function panel() {
+  /* ── Panel ── */
+  function getPanel() {
     var p = document.getElementById('__panel__');
     if (!p) { p = document.createElement('div'); p.id = '__panel__'; document.body.appendChild(p); }
-    p.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f0f4f0;overflow-y:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding-bottom:80px';
+    p.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f0f4f0;overflow-y:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding-bottom:40px';
     return p;
   }
   function closePanel() {
     window.speechSynthesis.cancel(); ttsActive = false;
     var p = document.getElementById('__panel__'); if (p) p.remove();
-    // Zurück zum Anfang scrollen
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    // Auf Start-Tab navigieren falls vorhanden
-    var tabs = document.querySelectorAll('[class*="tab"], [class*="nav"] button, nav button');
-    tabs.forEach(function(t) { if ((t.textContent||'').trim() === 'Start') t.click(); });
+    document.querySelectorAll('[class*="tab"] button, nav button, [class*="nav"] button').forEach(function(t) {
+      if ((t.textContent || '').trim() === 'Start') t.click();
+    });
   }
   window.__close__ = closePanel;
 
   function showLoading() {
-    var p = panel();
+    var p = getPanel();
     p.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:20px">' +
       '<div style="width:52px;height:52px;border:4px solid #d0e8da;border-top-color:#1a5c38;border-radius:50%;animation:sp 0.8s linear infinite"></div>' +
       '<p style="color:#1a5c38;font-weight:700;font-size:18px;margin:0">Brief wird analysiert…</p>' +
-      '<p style="color:#888;font-size:14px;margin:0;text-align:center">GPT-4o liest und übersetzt<br>deinen Brief</p>' +
+      '<p style="color:#888;font-size:14px;margin:0;text-align:center">GPT-4o liest und übersetzt deinen Brief</p>' +
       '<style>@keyframes sp{to{transform:rotate(360deg)}}</style></div>';
   }
 
   function showErr(msg) {
-    var p = panel();
+    var p = getPanel();
     p.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;padding:24px">' +
       '<span style="font-size:52px">⚠️</span>' +
       '<p style="color:#c0392b;font-weight:700;font-size:17px;margin:0">Fehler</p>' +
       '<p style="color:#555;font-size:14px;text-align:center;max-width:300px;white-space:pre-line">' + msg + '</p>' +
-      '<button onclick="__close__()" style="background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:12px 32px;cursor:pointer;font-weight:600;font-size:15px">← Zurück zum Hauptmenü</button></div>';
+      '<button onclick="__close__()" style="background:#1a3a2a;color:#fff;border:none;border-radius:14px;padding:16px 32px;cursor:pointer;font-weight:700;font-size:16px;width:100%;max-width:280px">← Zurück zum Hauptmenü</button></div>';
   }
 
-  function step(num, title, content) {
-    return '<div style="background:#fff;border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' +
-      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
-        '<span style="background:#1a3a2a;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">' + num + '</span>' +
-        '<p style="font-weight:700;color:#1a3a2a;margin:0;font-size:15px">' + title + '</p>' +
-      '</div>' + content + '</div>';
+  /* ── Smart action buttons based on letter type ── */
+  function buildActionBtns(d) {
+    var typen = d.antwort_typen || [];
+    var typ = d.brief_typ || '';
+    var btns = [];
+
+    // Always show relevant action buttons based on antwort_typen
+    var actionMap = {
+      'widerspruch': { icon: '✋', label: 'Widerspruch einlegen', color: '#c0392b', bg: '#fdecea' },
+      'ratenzahlung': { icon: '📆', label: 'Ratenzahlung beantragen', color: '#1a5c38', bg: '#eafaf1' },
+      'zahlung_zusagen': { icon: '💶', label: 'Zahlung zusagen', color: '#1a3a2a', bg: '#fff' },
+      'bestaetigung': { icon: '✅', label: 'Bestätigung senden', color: '#1a5c38', bg: '#eafaf1' },
+      'nachfrage': { icon: '❓', label: 'Nachfrage stellen', color: '#2874a6', bg: '#ebf5fb' },
+      'unterlagen_einreichen': { icon: '📎', label: 'Unterlagen einreichen', color: '#7d6608', bg: '#fef9e7' }
+    };
+
+    typen.forEach(function(t) {
+      var a = actionMap[t];
+      if (a) btns.push(
+        '<button onclick="alert(\'Funktion folgt: ' + a.label + '\')" style="display:flex;align-items:center;gap:10px;background:' + a.bg + ';color:' + a.color + ';border:1.5px solid ' + a.color + ';border-radius:14px;padding:16px;cursor:pointer;font-size:15px;font-weight:700;width:100%;text-align:left">' +
+        '<span style="font-size:22px">' + a.icon + '</span><div><p style="margin:0;font-size:15px;font-weight:700">' + a.label + '</p><p style="margin:2px 0 0;font-size:12px;opacity:0.7">Brief als Antwort erstellen</p></div></button>'
+      );
+    });
+
+    // If no specific types, show generic options
+    if (!btns.length) {
+      btns.push(
+        '<button onclick="alert(\'Funktion folgt: Antwort als E-Mail\')" style="display:flex;align-items:center;gap:10px;background:#1a3a2a;color:#fff;border:none;border-radius:14px;padding:16px;cursor:pointer;font-size:15px;font-weight:700;width:100%">' +
+        '<span style="font-size:22px">✉</span><div><p style="margin:0">Antwort als E-Mail</p><p style="margin:2px 0 0;font-size:12px;opacity:0.7">Brief als Antwort schreiben</p></div></button>'
+      );
+      btns.push(
+        '<button onclick="alert(\'Funktion folgt: Antwort als Brief\')" style="display:flex;align-items:center;gap:10px;background:#fff;color:#1a3a2a;border:2px solid #1a3a2a;border-radius:14px;padding:16px;cursor:pointer;font-size:15px;font-weight:700;width:100%">' +
+        '<span style="font-size:22px">📄</span><div><p style="margin:0">Antwort als Brief</p><p style="margin:2px 0 0;font-size:12px;opacity:0.7">Formellen Brief erstellen</p></div></button>'
+      );
+    }
+
+    return btns.join('');
   }
 
-  function playBtn(id, label, onclick) {
-    return '<button id="' + id + '" onclick="' + onclick + '" style="display:flex;align-items:center;gap:8px;background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:10px 20px;cursor:pointer;font-size:14px;font-weight:600;width:100%;justify-content:center;margin-top:10px">' +
-      '<span>▶</span> ' + label + '</button>';
+  /* ── Card helper ── */
+  function card(content) {
+    return '<div style="background:#fff;border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + content + '</div>';
+  }
+  function sectionTitle(num, icon, title) {
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">' +
+      '<span style="background:#1a3a2a;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">' + num + '</span>' +
+      '<p style="font-weight:700;color:#1a3a2a;margin:0;font-size:16px">' + icon + ' ' + title + '</p></div>';
   }
 
-  function actionBtn(icon, label, primary, onclick) {
-    return '<button onclick="' + onclick + '" style="display:flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:12px;padding:14px;cursor:pointer;font-size:14px;font-weight:600;' +
-      (primary ? 'background:#1a3a2a;color:#fff;' : 'background:#fff;color:#1a3a2a;border:2px solid #1a3a2a;') + '">' +
-      icon + ' ' + label + '</button>';
-  }
-
-  /* ── Main result view ── */
+  /* ── Main result ── */
   function showResult(d) {
-    var p = panel();
+    var p = getPanel();
     var lang = getLang();
     var code = getLangCode(lang);
     var rc = d.risiko === 'Hoch' ? '#c0392b' : d.risiko === 'Mittel' ? '#d68910' : '#1a7a40';
     var rb = d.risiko === 'Hoch' ? '#fdecea' : d.risiko === 'Mittel' ? '#fef9e7' : '#eafaf1';
 
-    /* Nächste-Schritte HTML */
-    var stepsHtml = (d.naechste_schritte || []).map(function (s, i) {
-      return '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px">' +
-        '<span style="background:#e8f4ee;color:#1a5c38;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:1px">' + (i + 1) + '</span>' +
-        '<p style="margin:0;font-size:14px;color:#1a3a2a;line-height:1.5">' + s + '</p></div>';
-    }).join('');
-
-    var ul = (d.unterlagen || []).map(function (u) {
-      return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px">' +
-        '<span style="color:#1a5c38;font-size:16px;line-height:1;flex-shrink:0">•</span>' +
+    var ul = (d.unterlagen || []).map(function(u) {
+      return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px">' +
+        '<span style="color:#1a5c38;font-size:18px;line-height:1;flex-shrink:0;margin-top:1px">•</span>' +
         '<p style="margin:0;font-size:14px;color:#1a3a2a;line-height:1.5">' + u + '</p></div>';
     }).join('');
 
+    var steps = (d.naechste_schritte || []).map(function(s, i) {
+      return '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px">' +
+        '<span style="background:#e8f4ee;color:#1a5c38;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:2px">' + (i+1) + '</span>' +
+        '<p style="margin:0;font-size:14px;color:#1a3a2a;line-height:1.5">' + s + '</p></div>';
+    }).join('');
+
     p.innerHTML =
-      /* Sticky header */
+      /* Sticky Header */
       '<div style="background:#1a3a2a;padding:14px 16px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center">' +
         '<div style="display:flex;align-items:center;gap:10px">' +
           '<span style="background:#2dbe78;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">✓</span>' +
           '<div><p style="margin:0;color:#fff;font-weight:700;font-size:15px">Brief analysiert</p>' +
           '<p style="margin:0;color:#7fc49e;font-size:11px">' + (d.absender || '') + '</p></div>' +
         '</div>' +
-        '<button onclick="__close__()" style="background:rgba(255,255,255,0.18);border:none;color:#fff;border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600">← Hauptmenü</button>' +
+        '<button onclick="__close__()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600">✕</button>' +
       '</div>' +
 
       '<div style="max-width:540px;margin:0 auto;padding:16px">' +
 
-      /* Step 1: Analyse */
-      step(1, 'Brief verstehen',
-        /* Worum */
-        '<div style="background:#f0f7f4;border-radius:10px;padding:12px;margin-bottom:12px">' +
-          '<p style="font-size:11px;color:#888;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.5px">Worum geht es</p>' +
+      /* Schritt 1: Verstehen */
+      card(
+        sectionTitle(1,'📋','Brief verstehen') +
+        '<div style="background:#f0f7f4;border-radius:10px;padding:14px;margin-bottom:12px">' +
+          '<p style="font-size:11px;color:#888;margin:0 0 5px;text-transform:uppercase;letter-spacing:0.5px">Worum geht es</p>' +
           '<p style="font-weight:700;color:#1a3a2a;margin:0;font-size:15px;line-height:1.5">' + (d.worum || '—') + '</p>' +
         '</div>' +
-        /* Grid */
         '<div style="display:grid;grid-template-columns:repeat(' + (d.betrag ? '3' : '2') + ',1fr);gap:8px">' +
           '<div style="background:#fff2f2;border-radius:10px;padding:12px">' +
             '<p style="font-size:11px;color:#888;margin:0 0 3px">📅 Frist</p>' +
@@ -753,47 +767,48 @@ document.addEventListener('DOMContentLoaded', async function() {
         '</div>'
       ) +
 
-      /* Step 2: Brief vorlesen */
-      step(2, 'Brief vorlesen',
-        '<p style="font-size:13px;color:#666;margin:0 0 4px">Originalbrief · Deutsch</p>' +
+      /* Schritt 2: Vorlesen */
+      card(
+        sectionTitle(2,'🔊','Brief & Erklärung anhören') +
         (d.original_text
-          ? playBtn('__pb1__', 'Brief vorlesen (Deutsch)', '__speak__(window.__aid__.original_text,"de-DE")')
-          : '<p style="font-size:13px;color:#aaa;font-style:italic;margin:0">Kein Originaltext verfügbar</p>'
-        )
+          ? '<button id="__pb1__" onclick="__speak__(window.__aid__.original_text,\'de-DE\')" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#f0f7f4;color:#1a3a2a;border:1.5px solid #1a5c38;border-radius:12px;padding:12px;cursor:pointer;font-size:14px;font-weight:600;width:100%;margin-bottom:10px">▶ Brief vorlesen (Deutsch · Original)</button>'
+          : '<div style="background:#f5f5f5;border-radius:10px;padding:12px;margin-bottom:10px;text-align:center;color:#aaa;font-size:13px">Originaltext nicht verfügbar</div>'
+        ) +
+        '<button id="__pb2__" onclick="__speak__(window.__aid__.erklarung,\'' + code + '\')" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#1a3a2a;color:#fff;border:none;border-radius:12px;padding:12px;cursor:pointer;font-size:14px;font-weight:600;width:100%">▶ Erklärung anhören (' + lang + ')</button>'
       ) +
 
-      /* Step 3: Erklärung vorlesen */
-      step(3, 'Erklärung anhören',
-        '<p style="font-size:14px;color:#444;margin:0 0 4px;line-height:1.65">' + (d.erklarung || '—') + '</p>' +
-        playBtn('__pb2__', 'Erklärung anhören (' + lang + ')', '__speak__(window.__aid__.erklarung,"' + code + '")')
-      ) +
-
-      /* Step 4: Was zu tun */
-      step(4, 'Was zu tun ist',
-        (ul ? '<div style="margin-bottom:10px">' + ul + '</div>' : '') +
+      /* Schritt 3: Erklärung Text */
+      card(
+        sectionTitle(3,'💬','Erklärung') +
+        '<p style="font-size:14px;color:#333;margin:0 0 12px;line-height:1.7">' + (d.erklarung || '—') + '</p>' +
         (d.empfehlung
           ? '<div style="background:#fef9e7;border-left:3px solid #f0c040;border-radius:8px;padding:12px">' +
-              '<p style="font-size:11px;color:#9a7d0a;margin:0 0 4px;font-weight:700">👉 Empfehlung</p>' +
+              '<p style="font-size:11px;color:#9a7d0a;margin:0 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">👉 Empfehlung</p>' +
               '<p style="color:#533f03;margin:0;font-size:14px;line-height:1.6">' + d.empfehlung + '</p>' +
             '</div>'
           : '')
       ) +
 
-      /* Step 5: Nächste Schritte */
-      step(5, 'Nächste Schritte',
-        stepsHtml || '<p style="color:#888;font-size:14px;margin:0">—</p>'
-      ) +
+      /* Schritt 4: Was zu tun */
+      (ul ? card(sectionTitle(4,'📌','Was zu tun ist') + ul) : '') +
 
-      /* Step 6: Aktionen */
-      step(6, 'Empfohlene Aktionen',
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-          actionBtn('✉', 'Als E-Mail', true, 'alert("Funktion folgt: Antwort per E-Mail")') +
-          actionBtn('📄', 'Als Brief', false, 'alert("Funktion folgt: Antwort als Brief")') +
-          (d.frist ? actionBtn('📅', 'Frist vormerken', false, 'alert("Frist: ' + (d.frist || '') + '")') : '') +
-          (d.betrag ? actionBtn('💶', 'Zahlung prüfen', false, 'alert("Betrag: ' + (d.betrag || '') + '")') : '') +
-          '<button onclick="__close__()" style="grid-column:span 2;background:#f0f4f0;color:#555;border:1px solid #ccc;border-radius:12px;padding:14px;cursor:pointer;font-size:14px;font-weight:600">← Zurück zum Hauptmenü</button>' +
-        '</div>'
-      ) +
+      /* Schritt 5: Nächste Schritte */
+      (steps ? card(sectionTitle(5,'🗂','Nächste Schritte') + steps) : '') +
+
+      /* ── Block 1: Hauptmenü ── */
+      '<div style="padding:4px 0 6px">' +
+        '<button onclick="__close__()" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1a3a2a;border:2px solid #1a3a2a;border-radius:16px;padding:18px;cursor:pointer;font-size:16px;font-weight:700;width:100%;box-shadow:0 2px 8px rgba(0,0,0,0.08)">' +
+          '← Zurück zum Hauptmenü' +
+        '</button>' +
+      '</div>' +
+
+      /* ── Block 2: Passende Antworten ── */
+      '<div style="margin-top:12px">' +
+        '<p style="font-size:12px;color:#888;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.8px;text-align:center">Passende Antwort erstellen</p>' +
+        '<div style="display:flex;flex-direction:column;gap:10px">' +
+          buildActionBtns(d) +
+        '</div>' +
+      '</div>' +
 
       '</div>';
   }
@@ -802,7 +817,5 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(addBtn, 1000); });
   else setTimeout(addBtn, 1000);
 })();
-
-</script>
-</body>
+</script></body>
 </html>
