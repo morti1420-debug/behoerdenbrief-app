@@ -652,6 +652,11 @@ document.addEventListener('DOMContentLoaded', async function() {
   function closePanel() {
     window.speechSynthesis.cancel(); ttsActive = false;
     var p = document.getElementById('__panel__'); if (p) p.remove();
+    // Zurück zum Anfang scrollen
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Auf Start-Tab navigieren falls vorhanden
+    var tabs = document.querySelectorAll('[class*="tab"], [class*="nav"] button, nav button');
+    tabs.forEach(function(t) { if ((t.textContent||'').trim() === 'Start') t.click(); });
   }
   window.__close__ = closePanel;
 
