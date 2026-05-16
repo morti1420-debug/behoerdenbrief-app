@@ -502,351 +502,300 @@ document.addEventListener('DOMContentLoaded', async function() {
 </script>
 
 <script>
-/* ===== OPENAI REAL ANALYSIS v3 ===== */
+/* ===== OPENAI REAL ANALYSIS v4 ===== */
 (function () {
   var STORAGE_KEY = '__behoerde_openai_key__';
-  var aiData = null;
   var uploadedFile = null;
   var isAnalyzing = false;
+  var ttsActive = false;
 
-  /* ---------- Settings Button ---------- */
-  function addSettingsBtn() {
+  /* ── API-Key Button ── */
+  function addBtn() {
     if (document.getElementById('__api_btn__')) return;
-    var btn = document.createElement('button');
-    btn.id = '__api_btn__';
-    btn.style.cssText = 'position:fixed;bottom:72px;right:12px;z-index:10000;border:none;border-radius:24px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.3)';
-    btn.onclick = showKeyDialog;
-    document.body.appendChild(btn);
-    updateBtn();
+    var b = document.createElement('button');
+    b.id = '__api_btn__';
+    b.style.cssText = 'position:fixed;bottom:72px;right:12px;z-index:10000;border:none;border-radius:24px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.3)';
+    b.onclick = enterKey;
+    document.body.appendChild(b);
+    syncBtn();
+  }
+  function syncBtn() {
+    var b = document.getElementById('__api_btn__');
+    if (!b) return;
+    var k = localStorage.getItem(STORAGE_KEY);
+    b.textContent = k ? '✓ KI aktiv' : '🔑 API-Key eingeben';
+    b.style.background = k ? '#1a5c38' : '#c0392b';
+    b.style.color = '#fff';
+  }
+  function enterKey() {
+    var v = prompt('OpenAI API-Key (sk-...):', localStorage.getItem(STORAGE_KEY) || '');
+    if (v === null) return;
+    v = v.trim();
+    if (!v) { localStorage.removeItem(STORAGE_KEY); alert('Entfernt.'); }
+    else if (v.startsWith('sk-')) { localStorage.setItem(STORAGE_KEY, v); alert('Gespeichert! Jetzt Brief hochladen und prüfen.'); }
+    else { alert('Ungültig – muss mit sk- beginnen.'); return; }
+    syncBtn();
   }
 
-  function updateBtn() {
-    var btn = document.getElementById('__api_btn__');
-    if (!btn) return;
-    var key = localStorage.getItem(STORAGE_KEY);
-    btn.textContent = key ? '✓ KI aktiv' : '🔑 API-Key eingeben';
-    btn.style.background = key ? '#1a5c38' : '#c0392b';
-    btn.style.color = '#fff';
-  }
-
-  function showKeyDialog() {
-    var existing = localStorage.getItem(STORAGE_KEY) || '';
-    var key = prompt('OpenAI API-Key eingeben (beginnt mit sk-):', existing);
-    if (key === null) return;
-    key = key.trim();
-    if (key === '') {
-      localStorage.removeItem(STORAGE_KEY);
-      alert('API-Key entfernt.');
-    } else if (key.startsWith('sk-')) {
-      localStorage.setItem(STORAGE_KEY, key);
-      alert('Gespeichert! Brief hochladen und "Brief prüfen" drücken.');
-    } else {
-      alert('Ungültiger Key. Muss mit sk- beginnen.');
-      return;
-    }
-    updateBtn();
-  }
-
-  /* ---------- File capture - alle Methoden ---------- */
+  /* ── File capture ── */
   function findFile() {
-    // Methode 1: Direkt alle file inputs abfragen
-    var inputs = document.querySelectorAll('input[type="file"]');
-    for (var i = 0; i < inputs.length; i++) {
-      if (inputs[i].files && inputs[i].files[0]) return inputs[i].files[0];
-    }
-    // Methode 2: Gespeicherte Referenz
+    var ins = document.querySelectorAll('input[type="file"]');
+    for (var i = 0; i < ins.length; i++) if (ins[i].files && ins[i].files[0]) return ins[i].files[0];
     return uploadedFile;
   }
-
-  function attachToInput(inp) {
-    if (inp.__aiOk__) return;
-    inp.__aiOk__ = true;
-    inp.addEventListener('change', function () {
-      if (inp.files && inp.files[0]) uploadedFile = inp.files[0];
-    });
+  function wire(inp) {
+    if (inp.__wired__) return; inp.__wired__ = true;
+    inp.addEventListener('change', function () { if (inp.files && inp.files[0]) uploadedFile = inp.files[0]; });
   }
-
-  // Direkt alle vorhandenen inputs abdecken
-  document.querySelectorAll('input[type="file"]').forEach(attachToInput);
-
-  // MutationObserver für dynamisch hinzugefügte inputs
-  new MutationObserver(function () {
-    document.querySelectorAll('input[type="file"]').forEach(attachToInput);
-  }).observe(document.body, { childList: true, subtree: true });
-
-  // Globale change/input events als Backup
+  document.querySelectorAll('input[type="file"]').forEach(wire);
+  new MutationObserver(function () { document.querySelectorAll('input[type="file"]').forEach(wire); })
+    .observe(document.body, { childList: true, subtree: true });
   document.addEventListener('change', function (e) {
-    if (e.target && e.target.type === 'file' && e.target.files && e.target.files[0]) {
-      uploadedFile = e.target.files[0];
-    }
+    if (e.target && e.target.type === 'file' && e.target.files && e.target.files[0]) uploadedFile = e.target.files[0];
   }, true);
-
   document.addEventListener('drop', function (e) {
-    var f = e.dataTransfer && e.dataTransfer.files;
-    if (f && f[0]) uploadedFile = f[0];
+    var f = e.dataTransfer && e.dataTransfer.files; if (f && f[0]) uploadedFile = f[0];
   }, true);
 
-  /* ---------- Intercept Brief prüfen ---------- */
+  /* ── Click intercept ── */
   document.addEventListener('click', function (e) {
     var el = e.target;
     for (var i = 0; i < 6; i++) {
       if (!el) break;
-      var txt = (el.textContent || '').trim();
-      if (el.tagName === 'BUTTON' && txt.indexOf('Brief pr') !== -1) {
-        var apiKey = localStorage.getItem(STORAGE_KEY);
+      if (el.tagName === 'BUTTON' && (el.textContent || '').indexOf('Brief pr') !== -1) {
+        var key = localStorage.getItem(STORAGE_KEY);
         var file = findFile();
-        if (apiKey && file && !isAnalyzing) {
-          uploadedFile = file;
-          isAnalyzing = true;
-          setTimeout(function () { runAnalysis(file, apiKey); }, 700);
-        } else if (!apiKey) {
-          setTimeout(function () { showPanel('error', 'Bitte zuerst den API-Key eingeben.\n(Roter Button unten rechts)'); }, 400);
-        }
-        // No file = let app show its own error / demo
+        if (key && file && !isAnalyzing) { isAnalyzing = true; setTimeout(function () { analyze(file, key); }, 700); }
+        else if (!key) setTimeout(function () { showErr('Bitte zuerst API-Key eingeben.\n(Roter Button unten rechts)'); }, 400);
         break;
       }
       el = el.parentElement;
     }
   }, true);
 
-  /* ---------- base64 helper ---------- */
-  function fileToBase64(file) {
+  /* ── Helpers ── */
+  function toB64(file) {
     return new Promise(function (res, rej) {
-      var r = new FileReader();
-      r.onload = function () { res(r.result.split(',')[1]); };
-      r.onerror = rej;
-      r.readAsDataURL(file);
+      var r = new FileReader(); r.onload = function () { res(r.result.split(',')[1]); }; r.onerror = rej; r.readAsDataURL(file);
     });
   }
-
-  /* ---------- Language detection ---------- */
-  function getSelectedLang() {
-    var map = {
-      'Deutsch':'Deutsch','Türkçe':'Türkisch','العربية':'Arabisch','English':'Englisch',
-      'Русский':'Russisch','فارسی':'Persisch','中文':'Chinesisch','Українська':'Ukrainisch',
-      'Polski':'Polnisch','Română':'Rumänisch','Български':'Bulgarisch','Español':'Spanisch',
-      'Français':'Französisch','Italiano':'Italienisch','Shqip':'Albanisch','Bosanski':'Bosnisch',
-      'Srpski':'Serbisch','Ελληνικά':'Griechisch'
-    };
+  function getLang() {
+    var map = { 'Türkçe':'Türkisch','العربية':'Arabisch','English':'Englisch','Русский':'Russisch',
+      'فارسی':'Persisch','中文':'Chinesisch','Українська':'Ukrainisch','Polski':'Polnisch',
+      'Română':'Rumänisch','Español':'Spanisch','Français':'Französisch','Italiano':'Italienisch',
+      'Shqip':'Albanisch','Ελληνικά':'Griechisch' };
     var t = document.body.innerText || '';
-    for (var k in map) { if (t.indexOf(k) !== -1 && k !== 'Deutsch') return map[k]; }
+    for (var k in map) if (t.indexOf(k) !== -1) return map[k];
     return 'Deutsch';
   }
-
-  function getLangCode(langName) {
-    var map = {
-      'Deutsch':'de-DE','Türkisch':'tr-TR','Arabisch':'ar-SA','Englisch':'en-US',
+  function getLangCode(name) {
+    var m = { 'Deutsch':'de-DE','Türkisch':'tr-TR','Arabisch':'ar-SA','Englisch':'en-US',
       'Russisch':'ru-RU','Persisch':'fa-IR','Chinesisch':'zh-CN','Ukrainisch':'uk-UA',
-      'Polnisch':'pl-PL','Rumänisch':'ro-RO','Bulgarisch':'bg-BG','Spanisch':'es-ES',
-      'Französisch':'fr-FR','Italienisch':'it-IT','Albanisch':'sq-AL','Griechisch':'el-GR'
-    };
-    return map[langName] || 'de-DE';
+      'Polnisch':'pl-PL','Rumänisch':'ro-RO','Spanisch':'es-ES','Französisch':'fr-FR',
+      'Italienisch':'it-IT','Albanisch':'sq-AL','Griechisch':'el-GR' };
+    return m[name] || 'de-DE';
   }
 
-  /* ---------- OpenAI call ---------- */
-  async function runAnalysis(file, apiKey) {
-    showPanel('loading', null);
+  /* ── OpenAI ── */
+  async function analyze(file, key) {
+    showLoading();
     try {
-      var b64 = await fileToBase64(file);
+      var b64 = await toB64(file);
       var mime = file.type || 'image/jpeg';
-      var lang = getSelectedLang();
+      var lang = getLang();
+      var prompt = 'Du bist Experte für deutsche Behörden- und Inkassobriefe.\nAnalysiere diesen Brief und antworte auf ' + lang + '.\nGib NUR gültiges JSON zurück:\n{\n  "worum": "1 Satz was der Brief will",\n  "absender": "Firmen- oder Behördenname",\n  "frist": "Datum als Text oder null",\n  "betrag": "z.B. 71,16 € oder null",\n  "risiko": "Hoch oder Mittel oder Niedrig",\n  "risiko_grund": "Warum dieses Risiko",\n  "unterlagen": ["Konkrete Aktion 1","Konkrete Aktion 2"],\n  "original_text": "Vollständiger Brieftext auf Deutsch, Wort für Wort",\n  "erklarung": "4-5 einfache Sätze auf ' + lang + ', verständlich für Laien",\n  "empfehlung": "Was genau tun, auf ' + lang + '",\n  "naechste_schritte": ["Schritt 1","Schritt 2","Schritt 3"]\n}';
 
-      var prompt = [
-        'Du bist Experte für deutsche Behörden- und Inkassobriefe.',
-        'Analysiere den Brief und antworte auf ' + lang + '.',
-        'Antworte NUR mit gültigem JSON:',
-        '{',
-        '  "worum": "Worum geht es (1 Satz)",',
-        '  "absender": "Name Behörde/Firma",',
-        '  "frist": "Datum als Text oder null",',
-        '  "betrag": "Geldbetrag z.B. 71,16 € oder null",',
-        '  "risiko": "Hoch oder Mittel oder Niedrig",',
-        '  "risiko_grund": "Kurze Begründung",',
-        '  "unterlagen": ["Aktion 1","Aktion 2"],',
-        '  "original_text": "Vollständiger Brieftext auf Deutsch",',
-        '  "erklarung": "Einfache Erklärung auf ' + lang + ' in 4-5 Sätzen",',
-        '  "empfehlung": "Konkrete Handlungsempfehlung auf ' + lang + '",',
-        '  "naechste_schritte": ["Schritt 1","Schritt 2","Schritt 3"],',
-        '  "antwort_noetig": true',
-        '}'
-      ].join('\n');
-
-      var resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      var r = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + apiKey
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          max_tokens: 2000,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + b64, detail: 'high' } }
-            ]
-          }]
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+        body: JSON.stringify({ model: 'gpt-4o', max_tokens: 2000, messages: [{ role: 'user', content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + b64, detail: 'high' } }
+        ]}]})
       });
-
-      if (!resp.ok) {
-        var ed = await resp.json();
-        throw new Error((ed.error && ed.error.message) || 'HTTP ' + resp.status);
-      }
-
-      var data = await resp.json();
+      if (!r.ok) { var e = await r.json(); throw new Error((e.error && e.error.message) || 'HTTP ' + r.status); }
+      var data = await r.json();
       var txt = data.choices[0].message.content;
-      var match = txt.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('Ungültige API-Antwort');
-      aiData = JSON.parse(match[0]);
-      window.__aiData__ = aiData;
+      var m = txt.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('Ungültige API-Antwort');
+      var d = JSON.parse(m[0]);
+      window.__aid__ = d;
       isAnalyzing = false;
-      showPanel('result', aiData);
-    } catch (err) {
-      isAnalyzing = false;
-      showPanel('error', err.message || 'Unbekannter Fehler');
-    }
+      showResult(d);
+    } catch (ex) { isAnalyzing = false; showErr(ex.message || 'Fehler'); }
   }
 
-  /* ---------- TTS ---------- */
-  var ttsActive = false;
-  function doSpeak(text, langCode) {
+  /* ── TTS ── */
+  function speak(text, code) {
     if (ttsActive) { window.speechSynthesis.cancel(); ttsActive = false; syncPlayBtns(); return; }
     var u = new SpeechSynthesisUtterance(text);
-    u.lang = langCode || 'de-DE';
-    u.rate = 0.91; u.pitch = 1.02;
+    u.lang = code || 'de-DE'; u.rate = 0.91; u.pitch = 1.02;
     u.onend = u.onerror = function () { ttsActive = false; syncPlayBtns(); };
     window.speechSynthesis.speak(u);
-    ttsActive = true;
-    syncPlayBtns();
+    ttsActive = true; syncPlayBtns();
   }
   function syncPlayBtns() {
-    ['__pb_orig__','__pb_erkl__'].forEach(function (id) {
+    ['__pb1__','__pb2__'].forEach(function (id) {
       var b = document.getElementById(id);
-      if (b) b.textContent = ttsActive ? '⏸ Pause' : (id === '__pb_orig__' ? '▶ Vorlesen' : '▶ Anhören');
+      if (b) b.querySelector('span') && (b.querySelector('span').textContent = ttsActive ? '⏸' : '▶');
     });
   }
-  window.__doSpeak__ = doSpeak;
+  window.__speak__ = speak;
 
-  /* ---------- Panel ---------- */
+  /* ── Panel helpers ── */
+  function panel() {
+    var p = document.getElementById('__panel__');
+    if (!p) { p = document.createElement('div'); p.id = '__panel__'; document.body.appendChild(p); }
+    p.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f0f4f0;overflow-y:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding-bottom:80px';
+    return p;
+  }
   function closePanel() {
     window.speechSynthesis.cancel(); ttsActive = false;
-    var p = document.getElementById('__ai_panel__');
-    if (p) p.remove();
+    var p = document.getElementById('__panel__'); if (p) p.remove();
   }
-  window.__closePanel__ = closePanel;
+  window.__close__ = closePanel;
 
-  function showPanel(state, data) {
-    var p = document.getElementById('__ai_panel__');
-    if (!p) {
-      p = document.createElement('div');
-      p.id = '__ai_panel__';
-      p.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f0f4f0;overflow-y:auto;padding:0 0 90px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
-      document.body.appendChild(p);
-    }
+  function showLoading() {
+    var p = panel();
+    p.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:20px">' +
+      '<div style="width:52px;height:52px;border:4px solid #d0e8da;border-top-color:#1a5c38;border-radius:50%;animation:sp 0.8s linear infinite"></div>' +
+      '<p style="color:#1a5c38;font-weight:700;font-size:18px;margin:0">Brief wird analysiert…</p>' +
+      '<p style="color:#888;font-size:14px;margin:0;text-align:center">GPT-4o liest und übersetzt<br>deinen Brief</p>' +
+      '<style>@keyframes sp{to{transform:rotate(360deg)}}</style></div>';
+  }
 
-    if (state === 'loading') {
-      p.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px">' +
-        '<div style="width:48px;height:48px;border:4px solid #d0e8da;border-top:4px solid #1a5c38;border-radius:50%;animation:__sp__ 0.8s linear infinite"></div>' +
-        '<p style="color:#1a5c38;font-weight:700;font-size:17px;margin:0">Brief wird analysiert…</p>' +
-        '<p style="color:#888;font-size:14px;margin:0">GPT-4o liest und übersetzt deinen Brief</p>' +
-        '<style>@keyframes __sp__{to{transform:rotate(360deg)}}</style></div>';
-      return;
-    }
+  function showErr(msg) {
+    var p = panel();
+    p.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;padding:24px">' +
+      '<span style="font-size:52px">⚠️</span>' +
+      '<p style="color:#c0392b;font-weight:700;font-size:17px;margin:0">Fehler</p>' +
+      '<p style="color:#555;font-size:14px;text-align:center;max-width:300px;white-space:pre-line">' + msg + '</p>' +
+      '<button onclick="__close__()" style="background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:12px 32px;cursor:pointer;font-weight:600;font-size:15px">← Zurück zum Hauptmenü</button></div>';
+  }
 
-    if (state === 'error') {
-      p.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;padding:24px">' +
-        '<span style="font-size:52px">⚠️</span>' +
-        '<p style="color:#c0392b;font-weight:700;font-size:17px;margin:0;text-align:center">Fehler</p>' +
-        '<p style="color:#666;font-size:14px;text-align:center;max-width:320px;white-space:pre-line">' + data + '</p>' +
-        '<button onclick="__closePanel__()" style="background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:12px 32px;cursor:pointer;font-weight:600;font-size:15px">Zurück</button></div>';
-      return;
-    }
+  function step(num, title, content) {
+    return '<div style="background:#fff;border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
+        '<span style="background:#1a3a2a;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">' + num + '</span>' +
+        '<p style="font-weight:700;color:#1a3a2a;margin:0;font-size:15px">' + title + '</p>' +
+      '</div>' + content + '</div>';
+  }
 
-    var d = data;
+  function playBtn(id, label, onclick) {
+    return '<button id="' + id + '" onclick="' + onclick + '" style="display:flex;align-items:center;gap:8px;background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:10px 20px;cursor:pointer;font-size:14px;font-weight:600;width:100%;justify-content:center;margin-top:10px">' +
+      '<span>▶</span> ' + label + '</button>';
+  }
+
+  function actionBtn(icon, label, primary, onclick) {
+    return '<button onclick="' + onclick + '" style="display:flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:12px;padding:14px;cursor:pointer;font-size:14px;font-weight:600;' +
+      (primary ? 'background:#1a3a2a;color:#fff;' : 'background:#fff;color:#1a3a2a;border:2px solid #1a3a2a;') + '">' +
+      icon + ' ' + label + '</button>';
+  }
+
+  /* ── Main result view ── */
+  function showResult(d) {
+    var p = panel();
+    var lang = getLang();
+    var code = getLangCode(lang);
     var rc = d.risiko === 'Hoch' ? '#c0392b' : d.risiko === 'Mittel' ? '#d68910' : '#1a7a40';
     var rb = d.risiko === 'Hoch' ? '#fdecea' : d.risiko === 'Mittel' ? '#fef9e7' : '#eafaf1';
-    var ul = (d.unterlagen || []).map(function (u) { return '<li style="margin:6px 0;font-size:14px;color:#1a3a2a">' + u + '</li>'; }).join('');
-    var steps = (d.naechste_schritte || []).map(function (s) { return '<div style="background:#fff;border-radius:12px;padding:12px 16px;margin-bottom:8px;border-left:3px solid #1a5c38;font-size:14px;color:#1a3a2a;line-height:1.5">' + s + '</div>'; }).join('');
-    var langCode = getLangCode(getSelectedLang());
+
+    /* Nächste-Schritte HTML */
+    var stepsHtml = (d.naechste_schritte || []).map(function (s, i) {
+      return '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px">' +
+        '<span style="background:#e8f4ee;color:#1a5c38;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:1px">' + (i + 1) + '</span>' +
+        '<p style="margin:0;font-size:14px;color:#1a3a2a;line-height:1.5">' + s + '</p></div>';
+    }).join('');
+
+    var ul = (d.unterlagen || []).map(function (u) {
+      return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px">' +
+        '<span style="color:#1a5c38;font-size:16px;line-height:1;flex-shrink:0">•</span>' +
+        '<p style="margin:0;font-size:14px;color:#1a3a2a;line-height:1.5">' + u + '</p></div>';
+    }).join('');
 
     p.innerHTML =
-      '<div style="background:#1a3a2a;padding:16px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center">' +
+      /* Sticky header */
+      '<div style="background:#1a3a2a;padding:14px 16px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center">' +
         '<div style="display:flex;align-items:center;gap:10px">' +
-          '<span style="background:#2dbe78;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">✓</span>' +
-          '<div><p style="margin:0;color:#fff;font-weight:700;font-size:16px">Brief analysiert</p>' +
-          '<p style="margin:0;color:#7fc49e;font-size:12px">' + (d.absender || '') + '</p></div></div>' +
-        '<button onclick="__closePanel__()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:10px;padding:7px 14px;cursor:pointer;font-size:13px">✕ Schließen</button>' +
+          '<span style="background:#2dbe78;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">✓</span>' +
+          '<div><p style="margin:0;color:#fff;font-weight:700;font-size:15px">Brief analysiert</p>' +
+          '<p style="margin:0;color:#7fc49e;font-size:11px">' + (d.absender || '') + '</p></div>' +
+        '</div>' +
+        '<button onclick="__close__()" style="background:rgba(255,255,255,0.18);border:none;color:#fff;border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600">← Hauptmenü</button>' +
       '</div>' +
+
       '<div style="max-width:540px;margin:0 auto;padding:16px">' +
 
-      '<div style="background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
-        '<p style="font-size:11px;color:#888;margin:0 0 5px;text-transform:uppercase;letter-spacing:0.8px">Worum geht es</p>' +
-        '<p style="font-weight:700;color:#1a3a2a;margin:0;font-size:15px;line-height:1.5">' + (d.worum || '—') + '</p>' +
-      '</div>' +
-
-      '<div style="display:grid;grid-template-columns:repeat(' + (d.betrag ? '3' : '2') + ',1fr);gap:10px;margin-bottom:12px">' +
-        '<div style="background:#fff;border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
-          '<p style="font-size:11px;color:#888;margin:0 0 5px">📅 Frist</p>' +
-          '<p style="font-weight:700;margin:0;font-size:14px;color:' + (d.frist ? '#c0392b' : '#888') + '">' + (d.frist || 'Keine') + '</p>' +
+      /* Step 1: Analyse */
+      step(1, 'Brief verstehen',
+        /* Worum */
+        '<div style="background:#f0f7f4;border-radius:10px;padding:12px;margin-bottom:12px">' +
+          '<p style="font-size:11px;color:#888;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.5px">Worum geht es</p>' +
+          '<p style="font-weight:700;color:#1a3a2a;margin:0;font-size:15px;line-height:1.5">' + (d.worum || '—') + '</p>' +
         '</div>' +
-        '<div style="background:' + rb + ';border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
-          '<p style="font-size:11px;color:#888;margin:0 0 5px">⚠️ Risiko</p>' +
-          '<p style="font-weight:700;margin:0;font-size:14px;color:' + rc + '">' + (d.risiko || '—') + '</p>' +
-          '<p style="font-size:11px;color:#888;margin:3px 0 0;line-height:1.4">' + (d.risiko_grund || '') + '</p>' +
-        '</div>' +
-        (d.betrag ? '<div style="background:#fff;border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)"><p style="font-size:11px;color:#888;margin:0 0 5px">💶 Betrag</p><p style="font-weight:700;margin:0;font-size:14px;color:#1a3a2a">' + d.betrag + '</p></div>' : '') +
-      '</div>' +
-
-      (ul ? '<div style="background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)"><p style="font-size:11px;color:#888;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.8px">Benötigt / Zu tun</p><ul style="margin:0;padding-left:20px">' + ul + '</ul></div>' : '') +
-
-      (d.original_text ?
-        '<div style="background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center">' +
-            '<div><p style="font-size:11px;color:#888;margin:0;text-transform:uppercase;letter-spacing:0.8px">🔊 Brief vorlesen</p>' +
-            '<p style="font-size:12px;color:#aaa;margin:3px 0 0">Deutsch · Original</p></div>' +
-            '<button id="__pb_orig__" onclick="__doSpeak__(window.__aiData__.original_text,\'de-DE\')" style="background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:600">▶ Vorlesen</button>' +
+        /* Grid */
+        '<div style="display:grid;grid-template-columns:repeat(' + (d.betrag ? '3' : '2') + ',1fr);gap:8px">' +
+          '<div style="background:#fff2f2;border-radius:10px;padding:12px">' +
+            '<p style="font-size:11px;color:#888;margin:0 0 3px">📅 Frist</p>' +
+            '<p style="font-weight:700;margin:0;font-size:13px;color:' + (d.frist ? '#c0392b' : '#888') + '">' + (d.frist || 'Keine') + '</p>' +
           '</div>' +
-        '</div>' : '') +
+          '<div style="background:' + rb + ';border-radius:10px;padding:12px">' +
+            '<p style="font-size:11px;color:#888;margin:0 0 3px">⚠️ Risiko</p>' +
+            '<p style="font-weight:700;margin:0;font-size:13px;color:' + rc + '">' + (d.risiko || '—') + '</p>' +
+            '<p style="font-size:10px;color:#888;margin:2px 0 0;line-height:1.3">' + (d.risiko_grund || '') + '</p>' +
+          '</div>' +
+          (d.betrag ? '<div style="background:#f0fff4;border-radius:10px;padding:12px"><p style="font-size:11px;color:#888;margin:0 0 3px">💶 Betrag</p><p style="font-weight:700;margin:0;font-size:13px;color:#1a3a2a">' + d.betrag + '</p></div>' : '') +
+        '</div>'
+      ) +
 
-      '<div style="background:#1a3a2a;border-radius:14px;padding:18px;margin-bottom:12px">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">' +
-          '<p style="font-size:11px;color:#7fc49e;margin:0;text-transform:uppercase;letter-spacing:0.8px">💬 Erklärung</p>' +
-          '<button id="__pb_erkl__" onclick="__doSpeak__(window.__aiData__.erklarung,\'' + langCode + '\')" style="background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:16px;padding:6px 14px;cursor:pointer;font-size:12px;flex-shrink:0;margin-left:8px">▶ Anhören</button>' +
-        '</div>' +
-        '<p style="color:#fff;margin:0;font-size:14px;line-height:1.75">' + (d.erklarung || '—') + '</p>' +
-      '</div>' +
+      /* Step 2: Brief vorlesen */
+      step(2, 'Brief vorlesen',
+        '<p style="font-size:13px;color:#666;margin:0 0 4px">Originalbrief · Deutsch</p>' +
+        (d.original_text
+          ? playBtn('__pb1__', 'Brief vorlesen (Deutsch)', '__speak__(window.__aid__.original_text,"de-DE")')
+          : '<p style="font-size:13px;color:#aaa;font-style:italic;margin:0">Kein Originaltext verfügbar</p>'
+        )
+      ) +
 
-      (d.empfehlung ?
-        '<div style="background:#fef9e7;border:1px solid #f0c040;border-radius:14px;padding:16px;margin-bottom:16px">' +
-          '<p style="font-size:11px;color:#9a7d0a;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.8px">👉 Empfehlung</p>' +
-          '<p style="color:#533f03;margin:0;font-size:14px;line-height:1.65">' + d.empfehlung + '</p>' +
-        '</div>' : '') +
+      /* Step 3: Erklärung vorlesen */
+      step(3, 'Erklärung anhören',
+        '<p style="font-size:14px;color:#444;margin:0 0 4px;line-height:1.65">' + (d.erklarung || '—') + '</p>' +
+        playBtn('__pb2__', 'Erklärung anhören (' + lang + ')', '__speak__(window.__aid__.erklarung,"' + code + '")')
+      ) +
 
-      (steps ?
-        '<div style="margin-bottom:16px">' +
-          '<p style="font-size:11px;color:#888;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.8px">Nächste Schritte</p>' +
-          steps +
-        '</div>' : '') +
+      /* Step 4: Was zu tun */
+      step(4, 'Was zu tun ist',
+        (ul ? '<div style="margin-bottom:10px">' + ul + '</div>' : '') +
+        (d.empfehlung
+          ? '<div style="background:#fef9e7;border-left:3px solid #f0c040;border-radius:8px;padding:12px">' +
+              '<p style="font-size:11px;color:#9a7d0a;margin:0 0 4px;font-weight:700">👉 Empfehlung</p>' +
+              '<p style="color:#533f03;margin:0;font-size:14px;line-height:1.6">' + d.empfehlung + '</p>' +
+            '</div>'
+          : '')
+      ) +
 
-      '<div style="margin-bottom:16px">' +
-        '<p style="font-size:11px;color:#888;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.8px">Aktionen</p>' +
+      /* Step 5: Nächste Schritte */
+      step(5, 'Nächste Schritte',
+        stepsHtml || '<p style="color:#888;font-size:14px;margin:0">—</p>'
+      ) +
+
+      /* Step 6: Aktionen */
+      step(6, 'Empfohlene Aktionen',
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-          '<button onclick="alert(\'Antwort als E-Mail: Funktion folgt\')" style="background:#1a3a2a;color:#fff;border:none;border-radius:12px;padding:14px 10px;cursor:pointer;font-size:13px;font-weight:600">✉ Als E-Mail</button>' +
-          '<button onclick="alert(\'Antwort als Brief: Funktion folgt\')" style="background:#fff;color:#1a3a2a;border:2px solid #1a3a2a;border-radius:12px;padding:14px 10px;cursor:pointer;font-size:13px;font-weight:600">📄 Als Brief</button>' +
-          '<button onclick="__closePanel__()" style="grid-column:span 2;background:#f0f4f0;color:#555;border:1px solid #ddd;border-radius:12px;padding:14px;cursor:pointer;font-size:13px">← Zurück zur App</button>' +
-        '</div>' +
-      '</div>' +
+          actionBtn('✉', 'Als E-Mail', true, 'alert("Funktion folgt: Antwort per E-Mail")') +
+          actionBtn('📄', 'Als Brief', false, 'alert("Funktion folgt: Antwort als Brief")') +
+          (d.frist ? actionBtn('📅', 'Frist vormerken', false, 'alert("Frist: ' + (d.frist || '') + '")') : '') +
+          (d.betrag ? actionBtn('💶', 'Zahlung prüfen', false, 'alert("Betrag: ' + (d.betrag || '') + '")') : '') +
+          '<button onclick="__close__()" style="grid-column:span 2;background:#f0f4f0;color:#555;border:1px solid #ccc;border-radius:12px;padding:14px;cursor:pointer;font-size:14px;font-weight:600">← Zurück zum Hauptmenü</button>' +
+        '</div>'
+      ) +
+
       '</div>';
   }
 
-  /* ---------- Init ---------- */
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { setTimeout(addSettingsBtn, 1000); });
-  } else {
-    setTimeout(addSettingsBtn, 1000);
-  }
+  /* ── Boot ── */
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(addBtn, 1000); });
+  else setTimeout(addBtn, 1000);
 })();
 
 </script>
