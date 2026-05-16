@@ -500,8 +500,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 })();
 </script>
+
 <script>
-/* ===== OPENAI REAL ANALYSIS v2 ===== */
+/* ===== OPENAI REAL ANALYSIS v3 ===== */
 (function () {
   var STORAGE_KEY = '__behoerde_openai_key__';
   var aiData = null;
@@ -513,7 +514,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (document.getElementById('__api_btn__')) return;
     var btn = document.createElement('button');
     btn.id = '__api_btn__';
-    btn.style.cssText = 'position:fixed;bottom:72px;right:12px;z-index:10000;border:none;border-radius:24px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.3);transition:all 0.2s';
+    btn.style.cssText = 'position:fixed;bottom:72px;right:12px;z-index:10000;border:none;border-radius:24px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.3)';
     btn.onclick = showKeyDialog;
     document.body.appendChild(btn);
     updateBtn();
@@ -533,41 +534,82 @@ document.addEventListener('DOMContentLoaded', async function() {
     var key = prompt('OpenAI API-Key eingeben (beginnt mit sk-):', existing);
     if (key === null) return;
     key = key.trim();
-    if (key === '') { localStorage.removeItem(STORAGE_KEY); alert('API-Key entfernt.'); }
-    else if (key.startsWith('sk-')) { localStorage.setItem(STORAGE_KEY, key); alert('✓ Gespeichert! Brief hochladen und "Brief prüfen" drücken.'); }
-    else { alert('Ungültiger Key – muss mit sk- beginnen.'); return; }
+    if (key === '') {
+      localStorage.removeItem(STORAGE_KEY);
+      alert('API-Key entfernt.');
+    } else if (key.startsWith('sk-')) {
+      localStorage.setItem(STORAGE_KEY, key);
+      alert('Gespeichert! Brief hochladen und "Brief prüfen" drücken.');
+    } else {
+      alert('Ungültiger Key. Muss mit sk- beginnen.');
+      return;
+    }
     updateBtn();
   }
 
-  /* ---------- Capture file ---------- */
+  /* ---------- File capture - alle Methoden ---------- */
+  function findFile() {
+    // Methode 1: Direkt alle file inputs abfragen
+    var inputs = document.querySelectorAll('input[type="file"]');
+    for (var i = 0; i < inputs.length; i++) {
+      if (inputs[i].files && inputs[i].files[0]) return inputs[i].files[0];
+    }
+    // Methode 2: Gespeicherte Referenz
+    return uploadedFile;
+  }
+
+  function attachToInput(inp) {
+    if (inp.__aiOk__) return;
+    inp.__aiOk__ = true;
+    inp.addEventListener('change', function () {
+      if (inp.files && inp.files[0]) uploadedFile = inp.files[0];
+    });
+  }
+
+  // Direkt alle vorhandenen inputs abdecken
+  document.querySelectorAll('input[type="file"]').forEach(attachToInput);
+
+  // MutationObserver für dynamisch hinzugefügte inputs
+  new MutationObserver(function () {
+    document.querySelectorAll('input[type="file"]').forEach(attachToInput);
+  }).observe(document.body, { childList: true, subtree: true });
+
+  // Globale change/input events als Backup
   document.addEventListener('change', function (e) {
     if (e.target && e.target.type === 'file' && e.target.files && e.target.files[0]) {
       uploadedFile = e.target.files[0];
     }
   }, true);
+
   document.addEventListener('drop', function (e) {
     var f = e.dataTransfer && e.dataTransfer.files;
     if (f && f[0]) uploadedFile = f[0];
   }, true);
 
-  /* ---------- Intercept Brief-prüfen ---------- */
+  /* ---------- Intercept Brief prüfen ---------- */
   document.addEventListener('click', function (e) {
     var el = e.target;
-    for (var i = 0; i < 5; i++) {
+    for (var i = 0; i < 6; i++) {
       if (!el) break;
-      if ((el.textContent || '').indexOf('Brief pr') !== -1 && el.tagName === 'BUTTON') {
+      var txt = (el.textContent || '').trim();
+      if (el.tagName === 'BUTTON' && txt.indexOf('Brief pr') !== -1) {
         var apiKey = localStorage.getItem(STORAGE_KEY);
-        if (apiKey && uploadedFile && !isAnalyzing) {
+        var file = findFile();
+        if (apiKey && file && !isAnalyzing) {
+          uploadedFile = file;
           isAnalyzing = true;
-          runAnalysis(uploadedFile, apiKey);
+          setTimeout(function () { runAnalysis(file, apiKey); }, 700);
+        } else if (!apiKey) {
+          setTimeout(function () { showPanel('error', 'Bitte zuerst den API-Key eingeben.\n(Roter Button unten rechts)'); }, 400);
         }
+        // No file = let app show its own error / demo
         break;
       }
       el = el.parentElement;
     }
   }, true);
 
-  /* ---------- File → base64 ---------- */
+  /* ---------- base64 helper ---------- */
   function fileToBase64(file) {
     return new Promise(function (res, rej) {
       var r = new FileReader();
@@ -577,88 +619,125 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
-  /* ---------- Detect language ---------- */
+  /* ---------- Language detection ---------- */
   function getSelectedLang() {
-    var map = {'🇩🇪':'Deutsch','🇹🇷':'Türkisch','🇸🇦':'Arabisch','🇬🇧':'Englisch',
-      '🇷🇺':'Russisch','🇮🇷':'Persisch','🇨🇳':'Chinesisch','🇺🇦':'Ukrainisch',
-      '🇵🇱':'Polnisch','🇷🇴':'Rumänisch','🇧🇬':'Bulgarisch','🇪🇸':'Spanisch',
-      '🇫🇷':'Französisch','🇮🇹':'Italienisch','🇦🇱':'Albanisch','🇧🇦':'Bosnisch',
-      '🇷🇸':'Serbisch','🇬🇷':'Griechisch'};
-    var bodyText = document.body.innerText || '';
-    for (var flag in map) { if (bodyText.indexOf(flag) !== -1) return map[flag]; }
+    var map = {
+      'Deutsch':'Deutsch','Türkçe':'Türkisch','العربية':'Arabisch','English':'Englisch',
+      'Русский':'Russisch','فارسی':'Persisch','中文':'Chinesisch','Українська':'Ukrainisch',
+      'Polski':'Polnisch','Română':'Rumänisch','Български':'Bulgarisch','Español':'Spanisch',
+      'Français':'Französisch','Italiano':'Italienisch','Shqip':'Albanisch','Bosanski':'Bosnisch',
+      'Srpski':'Serbisch','Ελληνικά':'Griechisch'
+    };
+    var t = document.body.innerText || '';
+    for (var k in map) { if (t.indexOf(k) !== -1 && k !== 'Deutsch') return map[k]; }
     return 'Deutsch';
   }
 
-  /* ---------- Run OpenAI analysis ---------- */
+  function getLangCode(langName) {
+    var map = {
+      'Deutsch':'de-DE','Türkisch':'tr-TR','Arabisch':'ar-SA','Englisch':'en-US',
+      'Russisch':'ru-RU','Persisch':'fa-IR','Chinesisch':'zh-CN','Ukrainisch':'uk-UA',
+      'Polnisch':'pl-PL','Rumänisch':'ro-RO','Bulgarisch':'bg-BG','Spanisch':'es-ES',
+      'Französisch':'fr-FR','Italienisch':'it-IT','Albanisch':'sq-AL','Griechisch':'el-GR'
+    };
+    return map[langName] || 'de-DE';
+  }
+
+  /* ---------- OpenAI call ---------- */
   async function runAnalysis(file, apiKey) {
     showPanel('loading', null);
     try {
-      var base64 = await fileToBase64(file);
+      var b64 = await fileToBase64(file);
       var mime = file.type || 'image/jpeg';
       var lang = getSelectedLang();
 
-      var prompt = 'Du bist Experte für deutsche Behörden- und Inkassobriefe. Analysiere diesen Brief und antworte auf ' + lang + '.\n\nNur JSON zurückgeben:\n{\n  "worum": "Worum geht es in einem Satz",\n  "absender": "Name Behörde/Firma",\n  "frist": "Datum als Text oder null",\n  "betrag": "Geldbetrag mit € oder null",\n  "risiko": "Hoch, Mittel oder Niedrig",\n  "risiko_grund": "Kurze Begründung",\n  "unterlagen": ["Aktion 1", "Aktion 2"],\n  "original_text": "Vollständiger Brieftext auf Deutsch (wörtlich)",\n  "erklarung": "Einfache Erklärung auf ' + lang + ' in 4-5 Sätzen, verständlich für Laien",\n  "empfehlung": "Konkrete Handlungsempfehlung auf ' + lang + '",\n  "naechste_schritte": ["Schritt 1", "Schritt 2", "Schritt 3"],\n  "antwort_noetig": true\n}';
+      var prompt = [
+        'Du bist Experte für deutsche Behörden- und Inkassobriefe.',
+        'Analysiere den Brief und antworte auf ' + lang + '.',
+        'Antworte NUR mit gültigem JSON:',
+        '{',
+        '  "worum": "Worum geht es (1 Satz)",',
+        '  "absender": "Name Behörde/Firma",',
+        '  "frist": "Datum als Text oder null",',
+        '  "betrag": "Geldbetrag z.B. 71,16 € oder null",',
+        '  "risiko": "Hoch oder Mittel oder Niedrig",',
+        '  "risiko_grund": "Kurze Begründung",',
+        '  "unterlagen": ["Aktion 1","Aktion 2"],',
+        '  "original_text": "Vollständiger Brieftext auf Deutsch",',
+        '  "erklarung": "Einfache Erklärung auf ' + lang + ' in 4-5 Sätzen",',
+        '  "empfehlung": "Konkrete Handlungsempfehlung auf ' + lang + '",',
+        '  "naechste_schritte": ["Schritt 1","Schritt 2","Schritt 3"],',
+        '  "antwort_noetig": true',
+        '}'
+      ].join('\n');
 
-      var res = await fetch('https://api.openai.com/v1/chat/completions', {
+      var resp = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + apiKey
+        },
         body: JSON.stringify({
-          model: 'gpt-4o', max_tokens: 1800,
-          messages: [{ role: 'user', content: [
-            { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64, detail: 'high' } }
-          ]}]
+          model: 'gpt-4o',
+          max_tokens: 2000,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + b64, detail: 'high' } }
+            ]
+          }]
         })
       });
 
-      if (!res.ok) { var ed = await res.json(); throw new Error((ed.error && ed.error.message) || 'HTTP ' + res.status); }
-      var data = await res.json();
+      if (!resp.ok) {
+        var ed = await resp.json();
+        throw new Error((ed.error && ed.error.message) || 'HTTP ' + resp.status);
+      }
+
+      var data = await resp.json();
       var txt = data.choices[0].message.content;
-      var m = txt.match(/\{[\s\S]*\}/);
-      if (!m) throw new Error('Ungültige API-Antwort');
-      aiData = JSON.parse(m[0]);
+      var match = txt.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error('Ungültige API-Antwort');
+      aiData = JSON.parse(match[0]);
+      window.__aiData__ = aiData;
       isAnalyzing = false;
       showPanel('result', aiData);
     } catch (err) {
       isAnalyzing = false;
-      showPanel('error', err.message || 'Fehler');
+      showPanel('error', err.message || 'Unbekannter Fehler');
     }
   }
 
-  /* ---------- TTS helpers ---------- */
-  var ttsPlaying = false;
-  var ttsUtter = null;
-
-  function speakText(text, lang) {
-    if (ttsPlaying) { window.speechSynthesis.cancel(); ttsPlaying = false; return false; }
+  /* ---------- TTS ---------- */
+  var ttsActive = false;
+  function doSpeak(text, langCode) {
+    if (ttsActive) { window.speechSynthesis.cancel(); ttsActive = false; syncPlayBtns(); return; }
     var u = new SpeechSynthesisUtterance(text);
-    u.lang = lang || 'de-DE';
-    u.rate = 0.92; u.pitch = 1.02;
-    u.onend = function () { ttsPlaying = false; updatePlayBtns(); };
-    u.onerror = function () { ttsPlaying = false; updatePlayBtns(); };
-    ttsUtter = u;
+    u.lang = langCode || 'de-DE';
+    u.rate = 0.91; u.pitch = 1.02;
+    u.onend = u.onerror = function () { ttsActive = false; syncPlayBtns(); };
     window.speechSynthesis.speak(u);
-    ttsPlaying = true;
-    return true;
+    ttsActive = true;
+    syncPlayBtns();
   }
-
-  function updatePlayBtns() {
-    ['__play_orig__','__play_erkl__'].forEach(function(id) {
+  function syncPlayBtns() {
+    ['__pb_orig__','__pb_erkl__'].forEach(function (id) {
       var b = document.getElementById(id);
-      if (b) b.textContent = ttsPlaying ? '⏸ Pause' : '▶ Vorlesen';
+      if (b) b.textContent = ttsActive ? '⏸ Pause' : (id === '__pb_orig__' ? '▶ Vorlesen' : '▶ Anhören');
     });
   }
+  window.__doSpeak__ = doSpeak;
 
-  function getLangCode() {
-    var map = {'Deutsch':'de-DE','Türkisch':'tr-TR','Arabisch':'ar-SA','Englisch':'en-US',
-      'Russisch':'ru-RU','Persisch':'fa-IR','Chinesisch':'zh-CN','Ukrainisch':'uk-UA',
-      'Polnisch':'pl-PL','Rumänisch':'ro-RO','Bulgarisch':'bg-BG','Spanisch':'es-ES',
-      'Französisch':'fr-FR','Italienisch':'it-IT','Albanisch':'sq-AL','Griechisch':'el-GR'};
-    return map[getSelectedLang()] || 'de-DE';
+  /* ---------- Panel ---------- */
+  function closePanel() {
+    window.speechSynthesis.cancel(); ttsActive = false;
+    var p = document.getElementById('__ai_panel__');
+    if (p) p.remove();
   }
+  window.__closePanel__ = closePanel;
 
-  /* ---------- Main Panel ---------- */
-  function getPanel() {
+  function showPanel(state, data) {
     var p = document.getElementById('__ai_panel__');
     if (!p) {
       p = document.createElement('div');
@@ -666,17 +745,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       p.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f0f4f0;overflow-y:auto;padding:0 0 90px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
       document.body.appendChild(p);
     }
-    return p;
-  }
-
-  function closePanel() {
-    window.speechSynthesis.cancel(); ttsPlaying = false;
-    var p = document.getElementById('__ai_panel__');
-    if (p) p.remove();
-  }
-
-  function showPanel(state, data) {
-    var p = getPanel();
 
     if (state === 'loading') {
       p.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px">' +
@@ -690,113 +758,97 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (state === 'error') {
       p.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;padding:24px">' +
         '<span style="font-size:52px">⚠️</span>' +
-        '<p style="color:#c0392b;font-weight:700;font-size:17px;margin:0;text-align:center">Fehler bei der Analyse</p>' +
-        '<p style="color:#666;font-size:14px;text-align:center;max-width:320px">' + data + '</p>' +
-        '<button onclick="(function(){window.speechSynthesis.cancel();document.getElementById(\'__ai_panel__\').remove()})()" style="background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:12px 32px;cursor:pointer;font-weight:600;font-size:15px">Zurück</button></div>';
+        '<p style="color:#c0392b;font-weight:700;font-size:17px;margin:0;text-align:center">Fehler</p>' +
+        '<p style="color:#666;font-size:14px;text-align:center;max-width:320px;white-space:pre-line">' + data + '</p>' +
+        '<button onclick="__closePanel__()" style="background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:12px 32px;cursor:pointer;font-weight:600;font-size:15px">Zurück</button></div>';
       return;
     }
 
-    /* --- Result state --- */
     var d = data;
     var rc = d.risiko === 'Hoch' ? '#c0392b' : d.risiko === 'Mittel' ? '#d68910' : '#1a7a40';
     var rb = d.risiko === 'Hoch' ? '#fdecea' : d.risiko === 'Mittel' ? '#fef9e7' : '#eafaf1';
-    var ul = (d.unterlagen || []).map(function(u){ return '<li style="margin:6px 0;font-size:14px;color:#1a3a2a">'+u+'</li>'; }).join('');
-    var steps = (d.naechste_schritte || []).map(function(s){ return '<div style="background:#fff;border-radius:12px;padding:12px 16px;margin-bottom:8px;border-left:3px solid #1a5c38;font-size:14px;color:#1a3a2a">'+s+'</div>'; }).join('');
+    var ul = (d.unterlagen || []).map(function (u) { return '<li style="margin:6px 0;font-size:14px;color:#1a3a2a">' + u + '</li>'; }).join('');
+    var steps = (d.naechste_schritte || []).map(function (s) { return '<div style="background:#fff;border-radius:12px;padding:12px 16px;margin-bottom:8px;border-left:3px solid #1a5c38;font-size:14px;color:#1a3a2a;line-height:1.5">' + s + '</div>'; }).join('');
+    var langCode = getLangCode(getSelectedLang());
 
     p.innerHTML =
-      /* Header */
-      '<div style="background:#1a3a2a;padding:16px 16px 14px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center">' +
+      '<div style="background:#1a3a2a;padding:16px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center">' +
         '<div style="display:flex;align-items:center;gap:10px">' +
-          '<span style="background:#2dbe78;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">✓</span>' +
+          '<span style="background:#2dbe78;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">✓</span>' +
           '<div><p style="margin:0;color:#fff;font-weight:700;font-size:16px">Brief analysiert</p>' +
-          '<p style="margin:0;color:#7fc49e;font-size:12px">' + (d.absender||'') + '</p></div></div>' +
-        '<button onclick="closePanel()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:10px;padding:7px 14px;cursor:pointer;font-size:13px">✕</button>' +
+          '<p style="margin:0;color:#7fc49e;font-size:12px">' + (d.absender || '') + '</p></div></div>' +
+        '<button onclick="__closePanel__()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:10px;padding:7px 14px;cursor:pointer;font-size:13px">✕ Schließen</button>' +
       '</div>' +
       '<div style="max-width:540px;margin:0 auto;padding:16px">' +
 
-      /* Worum */
       '<div style="background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
         '<p style="font-size:11px;color:#888;margin:0 0 5px;text-transform:uppercase;letter-spacing:0.8px">Worum geht es</p>' +
-        '<p style="font-weight:700;color:#1a3a2a;margin:0;font-size:15px;line-height:1.5">' + (d.worum||'—') + '</p>' +
+        '<p style="font-weight:700;color:#1a3a2a;margin:0;font-size:15px;line-height:1.5">' + (d.worum || '—') + '</p>' +
       '</div>' +
 
-      /* Grid: Frist + Risiko + Betrag */
-      '<div style="display:grid;grid-template-columns:repeat('+(d.betrag?'3':'2')+',1fr);gap:10px;margin-bottom:12px">' +
+      '<div style="display:grid;grid-template-columns:repeat(' + (d.betrag ? '3' : '2') + ',1fr);gap:10px;margin-bottom:12px">' +
         '<div style="background:#fff;border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
           '<p style="font-size:11px;color:#888;margin:0 0 5px">📅 Frist</p>' +
-          '<p style="font-weight:700;margin:0;font-size:14px;color:'+(d.frist?'#c0392b':'#888')+'">'+(d.frist||'Keine')+'</p>' +
+          '<p style="font-weight:700;margin:0;font-size:14px;color:' + (d.frist ? '#c0392b' : '#888') + '">' + (d.frist || 'Keine') + '</p>' +
         '</div>' +
-        '<div style="background:'+rb+';border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
+        '<div style="background:' + rb + ';border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
           '<p style="font-size:11px;color:#888;margin:0 0 5px">⚠️ Risiko</p>' +
-          '<p style="font-weight:700;margin:0;font-size:14px;color:'+rc+'">'+(d.risiko||'—')+'</p>' +
-          '<p style="font-size:11px;color:#888;margin:3px 0 0;line-height:1.4">'+(d.risiko_grund||'')+'</p>' +
+          '<p style="font-weight:700;margin:0;font-size:14px;color:' + rc + '">' + (d.risiko || '—') + '</p>' +
+          '<p style="font-size:11px;color:#888;margin:3px 0 0;line-height:1.4">' + (d.risiko_grund || '') + '</p>' +
         '</div>' +
-        (d.betrag?'<div style="background:#fff;border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)"><p style="font-size:11px;color:#888;margin:0 0 5px">💶 Betrag</p><p style="font-weight:700;margin:0;font-size:14px;color:#1a3a2a">'+d.betrag+'</p></div>':'') +
+        (d.betrag ? '<div style="background:#fff;border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)"><p style="font-size:11px;color:#888;margin:0 0 5px">💶 Betrag</p><p style="font-weight:700;margin:0;font-size:14px;color:#1a3a2a">' + d.betrag + '</p></div>' : '') +
       '</div>' +
 
-      /* Unterlagen */
-      (ul?'<div style="background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)"><p style="font-size:11px;color:#888;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.8px">Benötigt / Zu tun</p><ul style="margin:0;padding-left:20px">'+ul+'</ul></div>':'') +
+      (ul ? '<div style="background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)"><p style="font-size:11px;color:#888;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.8px">Benötigt / Zu tun</p><ul style="margin:0;padding-left:20px">' + ul + '</ul></div>' : '') +
 
-      /* Vorlesen - Original */
-      (d.original_text?
-      '<div style="background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
-          '<div><p style="font-size:11px;color:#888;margin:0;text-transform:uppercase;letter-spacing:0.8px">🔊 Brief vorlesen</p>' +
-          '<p style="font-size:12px;color:#aaa;margin:3px 0 0">Deutsch · Original</p></div>' +
-          '<button id="__play_orig__" onclick="(function(){var playing=speakText(aiData.original_text,\'de-DE\');updatePlayBtns();})()" style="background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:600">▶ Vorlesen</button>' +
-        '</div>' +
-      '</div>':'') +
+      (d.original_text ?
+        '<div style="background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center">' +
+            '<div><p style="font-size:11px;color:#888;margin:0;text-transform:uppercase;letter-spacing:0.8px">🔊 Brief vorlesen</p>' +
+            '<p style="font-size:12px;color:#aaa;margin:3px 0 0">Deutsch · Original</p></div>' +
+            '<button id="__pb_orig__" onclick="__doSpeak__(window.__aiData__.original_text,\'de-DE\')" style="background:#1a3a2a;color:#fff;border:none;border-radius:20px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:600">▶ Vorlesen</button>' +
+          '</div>' +
+        '</div>' : '') +
 
-      /* Erklärung */
       '<div style="background:#1a3a2a;border-radius:14px;padding:18px;margin-bottom:12px">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">' +
           '<p style="font-size:11px;color:#7fc49e;margin:0;text-transform:uppercase;letter-spacing:0.8px">💬 Erklärung</p>' +
-          '<button id="__play_erkl__" onclick="(function(){speakText(aiData.erklarung,getLangCode());updatePlayBtns();})()" style="background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:16px;padding:6px 14px;cursor:pointer;font-size:12px;flex-shrink:0;margin-left:8px">▶ Anhören</button>' +
+          '<button id="__pb_erkl__" onclick="__doSpeak__(window.__aiData__.erklarung,\'' + langCode + '\')" style="background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:16px;padding:6px 14px;cursor:pointer;font-size:12px;flex-shrink:0;margin-left:8px">▶ Anhören</button>' +
         '</div>' +
-        '<p style="color:#fff;margin:0;font-size:14px;line-height:1.75">'+(d.erklarung||'—')+'</p>' +
+        '<p style="color:#fff;margin:0;font-size:14px;line-height:1.75">' + (d.erklarung || '—') + '</p>' +
       '</div>' +
 
-      /* Empfehlung */
-      (d.empfehlung?
-      '<div style="background:#fef9e7;border:1px solid #f0c040;border-radius:14px;padding:16px;margin-bottom:16px">' +
-        '<p style="font-size:11px;color:#9a7d0a;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.8px">👉 Empfehlung</p>' +
-        '<p style="color:#533f03;margin:0;font-size:14px;line-height:1.65">'+(d.empfehlung)+'</p>' +
-      '</div>':'') +
+      (d.empfehlung ?
+        '<div style="background:#fef9e7;border:1px solid #f0c040;border-radius:14px;padding:16px;margin-bottom:16px">' +
+          '<p style="font-size:11px;color:#9a7d0a;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.8px">👉 Empfehlung</p>' +
+          '<p style="color:#533f03;margin:0;font-size:14px;line-height:1.65">' + d.empfehlung + '</p>' +
+        '</div>' : '') +
 
-      /* Nächste Schritte */
-      (steps?
-      '<div style="margin-bottom:16px">' +
-        '<p style="font-size:11px;color:#888;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.8px">Nächste Schritte</p>' +
-        steps +
-      '</div>':'') +
+      (steps ?
+        '<div style="margin-bottom:16px">' +
+          '<p style="font-size:11px;color:#888;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.8px">Nächste Schritte</p>' +
+          steps +
+        '</div>' : '') +
 
-      /* Aktionen */
       '<div style="margin-bottom:16px">' +
         '<p style="font-size:11px;color:#888;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.8px">Aktionen</p>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-          '<button onclick="alert(\'Funktion: Antwort als E-Mail erstellen (kommt bald)\')" style="background:#1a3a2a;color:#fff;border:none;border-radius:12px;padding:14px 10px;cursor:pointer;font-size:13px;font-weight:600">✉ Als E-Mail antworten</button>' +
-          '<button onclick="alert(\'Funktion: Antwort als Brief erstellen (kommt bald)\')" style="background:#fff;color:#1a3a2a;border:2px solid #1a3a2a;border-radius:12px;padding:14px 10px;cursor:pointer;font-size:13px;font-weight:600">📄 Als Brief antworten</button>' +
-          (d.antwort_noetig===false?'<button onclick="closePanel()" style="grid-column:span 2;background:#f5f5f5;color:#555;border:none;border-radius:12px;padding:14px;cursor:pointer;font-size:13px">✗ Keine Antwort notwendig</button>':
-          '<button onclick="closePanel()" style="grid-column:span 2;background:#f5f5f5;color:#555;border:none;border-radius:12px;padding:14px;cursor:pointer;font-size:13px">Zurück zur App</button>') +
+          '<button onclick="alert(\'Antwort als E-Mail: Funktion folgt\')" style="background:#1a3a2a;color:#fff;border:none;border-radius:12px;padding:14px 10px;cursor:pointer;font-size:13px;font-weight:600">✉ Als E-Mail</button>' +
+          '<button onclick="alert(\'Antwort als Brief: Funktion folgt\')" style="background:#fff;color:#1a3a2a;border:2px solid #1a3a2a;border-radius:12px;padding:14px 10px;cursor:pointer;font-size:13px;font-weight:600">📄 Als Brief</button>' +
+          '<button onclick="__closePanel__()" style="grid-column:span 2;background:#f0f4f0;color:#555;border:1px solid #ddd;border-radius:12px;padding:14px;cursor:pointer;font-size:13px">← Zurück zur App</button>' +
         '</div>' +
       '</div>' +
       '</div>';
-
-    /* Make helpers available globally for inline onclick */
-    window.aiData = d;
-    window.speakText = speakText;
-    window.updatePlayBtns = updatePlayBtns;
-    window.getLangCode = getLangCode;
-    window.closePanel = closePanel;
   }
 
-  /* --- Init --- */
+  /* ---------- Init ---------- */
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function(){ setTimeout(addSettingsBtn, 800); });
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(addSettingsBtn, 1000); });
   } else {
-    setTimeout(addSettingsBtn, 800);
+    setTimeout(addSettingsBtn, 1000);
   }
 })();
+
 </script>
 </body>
 </html>
